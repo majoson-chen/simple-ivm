@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, Query, Path, Body, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from CONFIG import CONFIG
 from db import DBSession, create as db_create, drop as db_drop, fake as db_fake, Goods
@@ -10,6 +11,21 @@ from pydantic import BaseModel
 
 from uvicorn import run as run_uvicorn
 import sys
+
+app = FastAPI()
+
+origins = [
+    "http://localhost:3000",
+    "http://localhost:8080",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def get_db():
     db = DBSession()
@@ -28,10 +44,10 @@ class GooodsType(BaseModel):
     class Config:
         orm_mode = True
 
-app = FastAPI()
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/login')
 
-@app.post('/login/')
+@app.post('/login')
 async def login(data: OAuth2PasswordRequestForm = Depends()):
     if (data.username == CONFIG.UI_USERNAME) and (data.password == CONFIG.UI_PASSWORD):
         return {
@@ -45,11 +61,11 @@ async def login(data: OAuth2PasswordRequestForm = Depends()):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-@app.post('/list/')
+@app.post('/list')
 async def list_goods(db = Depends(get_db), _=Depends(oauth2_scheme)) -> List[GooodsType]:
     return db.query(Goods).all()
 
-@app.post('/update/')
+@app.post('/update')
 async def list_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_scheme)) -> bool:
     try:
         indb: Goods = db.query(Goods).filter(Goods.key == goods.key).one()
@@ -62,7 +78,7 @@ async def list_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_s
     db.commit()
     return True
 
-@app.post("/del/")
+@app.post("/del")
 async def del_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_scheme)) -> bool:
     try:
         indb: Goods = db.query(Goods).filter(Goods.key == goods.key).one()
@@ -71,7 +87,7 @@ async def del_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_sc
     db.delete(indb)
     return True
 
-@app.post("/add/")
+@app.post("/add")
 async def add_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_scheme)) -> bool:
     
     if db.query(

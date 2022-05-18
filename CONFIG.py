@@ -3,7 +3,7 @@ import os
 class CONFIG:
     DB_URI =  "sqlite:///data.db"
 
-    SECRET_KEY = os.urandom(64)
+    SECRET_KEY = "asdfjiaoksdfiwmsdfjm"
     ALGORITHM = "HS256"
     ACCESS_TOKEN_EXPIRE_DAYS = 120
 
