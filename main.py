@@ -1,11 +1,11 @@
-from fastapi import FastAPI, Depends, Query, Path, Body, HTTPException
+from fastapi import FastAPI, Depends, Body, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from CONFIG import CONFIG
 from db import DBSession, create as db_create, drop as db_drop, fake as db_fake, Goods
 
 from sqlalchemy import exists
-from typing import Optional, List
+from typing import Optional, List, Union
 from jose import jwt
 from pydantic import BaseModel
 
@@ -38,11 +38,8 @@ class GooodsType(BaseModel):
     key: int
     name: str
     quan: float
-    unit: str
-    mark: Optional[str]
-
-    class Config:
-        orm_mode = True
+    unit: Optional[Union[str, None]]
+    mark: Optional[Union[str, None]]
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/login')
@@ -81,15 +78,19 @@ async def list_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_s
 @app.post("/del")
 async def del_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_scheme)) -> bool:
     try:
-        indb: Goods = db.query(Goods).filter(Goods.key == goods.key).one()
+        indb: Goods = db.query(Goods).filter(Goods.name == goods.name).one()
     except:
         raise HTTPException(400, "没有找到该项目")
     db.delete(indb)
+    db.commit()
     return True
 
 @app.post("/add")
-async def add_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_scheme)) -> bool:
-    
+async def add_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_scheme)) -> int:
+    """
+
+    :rtype: 新项目的id
+    """
     if db.query(
         exists().where( Goods.name == goods.name )
     ).scalar():
@@ -99,7 +100,8 @@ async def add_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_sc
     new = Goods(name = goods.name, mark = goods.mark, unit = goods.unit, quan = goods.quan)
     db.add(new)
     db.commit()
-    return new
+
+    return db.query(Goods).filter(Goods.name == goods.name).one()
 
 if __name__ == '__main__':
     if sys.argv.__len__() > 1:
