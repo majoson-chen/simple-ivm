@@ -1,6 +1,8 @@
-from fastapi import FastAPI, Depends, Body, HTTPException
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from starlette.responses import RedirectResponse
 from CONFIG import CONFIG
 from db import DBSession, create as db_create, drop as db_drop, fake as db_fake, Goods
 
@@ -13,19 +15,15 @@ from uvicorn import run as run_uvicorn
 import sys
 
 app = FastAPI()
+# app.mount("/", StaticFiles(directory="dist"), name="static")
 
-origins = [
-    "http://localhost:3000",
-    "http://localhost:8080",
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=CONFIG.IVM_ORIGINS,
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 def get_db():
     db = DBSession()
@@ -41,14 +39,21 @@ class GooodsType(BaseModel):
     unit: Optional[Union[str, None]]
     mark: Optional[Union[str, None]]
 
+oauth2 = OAuth2PasswordBearer(tokenUrl='/api/login')
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/login')
+def oauth2_scheme(token = Depends(oauth2)):
+    
+    data = jwt.decode(token, key=CONFIG.IVM_SECRET_KEY, algorithms=CONFIG.IVM_ALGORITHM)
+    if data.get('user_name') == CONFIG.IVM_USERNAME and data.get('password') == CONFIG.IVM_PASSWORD:
+        return True
+    else:
+        raise HTTPException(401, "用户校验错误! 请重新登录再试!")
 
-@app.post('/login')
+@app.post('/api/login')
 async def login(data: OAuth2PasswordRequestForm = Depends()):
-    if (data.username == CONFIG.UI_USERNAME) and (data.password == CONFIG.UI_PASSWORD):
+    if (data.username == CONFIG.IVM_USERNAME) and (data.password == CONFIG.IVM_PASSWORD):
         return {
-            "access_token": jwt.encode(claims={"user_name": data.username}, key=CONFIG.SECRET_KEY, algorithm=CONFIG.ALGORITHM),
+            "access_token": jwt.encode(claims={"user_name": data.username, 'password': data.password}, key=CONFIG.IVM_SECRET_KEY, algorithm=CONFIG.IVM_ALGORITHM),
             "token_type": "bearer"
         }
     else:
@@ -58,11 +63,11 @@ async def login(data: OAuth2PasswordRequestForm = Depends()):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-@app.post('/list')
+@app.post('/api/list')
 async def list_goods(db = Depends(get_db), _=Depends(oauth2_scheme)) -> List[GooodsType]:
     return db.query(Goods).all()
 
-@app.post('/update')
+@app.post('/api/update')
 async def list_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_scheme)) -> bool:
     try:
         indb: Goods = db.query(Goods).filter(Goods.key == goods.key).one()
@@ -75,7 +80,7 @@ async def list_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_s
     db.commit()
     return True
 
-@app.post("/del")
+@app.post("/api/del")
 async def del_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_scheme)) -> bool:
     try:
         indb: Goods = db.query(Goods).filter(Goods.name == goods.name).one()
@@ -85,7 +90,7 @@ async def del_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_sc
     db.commit()
     return True
 
-@app.post("/add")
+@app.post("/api/add")
 async def add_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_scheme)) -> int:
     """
 
@@ -117,4 +122,4 @@ if __name__ == '__main__':
             db_fake()
             exit()
 
-    run_uvicorn(app, host="0.0.0.0", port=8000)
+    run_uvicorn(app, host="localhost", port=8000)

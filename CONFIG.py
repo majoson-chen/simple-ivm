@@ -1,14 +1,15 @@
 import os
 
 class CONFIG:
-    DB_URI =  "sqlite:///data.db"
+    IVM_DB_URI =  "sqlite:///data.db"
 
-    SECRET_KEY = "asdfjiaoksdfiwmsdfjm"
-    ALGORITHM = "HS256"
-    ACCESS_TOKEN_EXPIRE_DAYS = 120
+    IVM_SECRET_KEY = "asdfjiaoksdfiwmsdfjm"
+    IVM_ALGORITHM = "HS256"
 
-    UI_USERNAME = "admin"
-    UI_PASSWORD = "998877"
+    IVM_USERNAME = "admin"
+    IVM_PASSWORD = "998877"
+
+    # IVM_ORIGINS = ["*"]
     
 
 # ENV 变量覆盖
@@ -19,4 +20,7 @@ for attr in CONFIG.__dict__:
         continue
     else:
         if attr in os.environ:
-            setattr(CONFIG, attr, os.environ[attr])
+            if attr == 'IVM_ORIGINS':
+                setattr(CONFIG, attr, os.environ[attr].split(','))
+            else:
+                setattr(CONFIG, attr, os.environ[attr])

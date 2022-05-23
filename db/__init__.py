@@ -4,7 +4,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from CONFIG import CONFIG
 
 Base = declarative_base()
-engine = create_engine(CONFIG.DB_URI, connect_args={"check_same_thread": False})
+engine = create_engine(CONFIG.IVM_DB_URI, connect_args={"check_same_thread": False})
 DBSession = sessionmaker(bind=engine)
 
 def create():
