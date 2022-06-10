@@ -1,13 +1,12 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from starlette.responses import RedirectResponse
 from CONFIG import CONFIG
-from db import DBSession, create as db_create, drop as db_drop, fake as db_fake, Goods
+from db import create_all as db_create, drop_all as db_drop, create_fake as db_fake, Goods, Category, database
 
-from sqlalchemy import exists
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Generator
 from jose import jwt
 from pydantic import BaseModel
 
@@ -15,7 +14,7 @@ from uvicorn import run as run_uvicorn
 import sys
 
 app = FastAPI()
-# app.mount("/", StaticFiles(directory="dist"), name="static")
+
 
 # app.add_middleware(
 #     CORSMiddleware,
@@ -26,34 +25,52 @@ app = FastAPI()
 # )
 
 def get_db():
-    db = DBSession()
-    try:
-        yield db
-    finally:
-        db.close()
+    with database.atomic() as txn:
+        try:
+            yield txn
+        finally:
+            txn.rollback()
 
-class GooodsType(BaseModel):
-    key: int
+class CategoryType_(BaseModel):
+    key: str
+    name: str
+    unit: Optional[Union[str, None]]
+    mark: Optional[str]
+
+    class Config:
+        orm_mode = True
+
+class GoodsType(BaseModel):
+    key: str
     name: str
     quan: float
-    unit: Optional[Union[str, None]]
-    mark: Optional[Union[str, None]]
+    flag: Optional[str] = ""
+    # belongs: CategoryType_
 
-oauth2 = OAuth2PasswordBearer(tokenUrl='/api/login')
+    class Config:
+        orm_mode = True
 
-def oauth2_scheme(token = Depends(oauth2)):
-    
+class CategoryType(CategoryType_):
+    goods: List[GoodsType] = []
+
+
+oauth2 = OAuth2PasswordBearer(tokenUrl='/login')
+
+
+def oauth2_scheme(token=Depends(oauth2)):
     data = jwt.decode(token, key=CONFIG.IVM_SECRET_KEY, algorithms=CONFIG.IVM_ALGORITHM)
     if data.get('user_name') == CONFIG.IVM_USERNAME and data.get('password') == CONFIG.IVM_PASSWORD:
         return True
     else:
         raise HTTPException(401, "用户校验错误! 请重新登录再试!")
 
-@app.post('/api/login')
+
+@app.post('/login')
 async def login(data: OAuth2PasswordRequestForm = Depends()):
     if (data.username == CONFIG.IVM_USERNAME) and (data.password == CONFIG.IVM_PASSWORD):
         return {
-            "access_token": jwt.encode(claims={"user_name": data.username, 'password': data.password}, key=CONFIG.IVM_SECRET_KEY, algorithm=CONFIG.IVM_ALGORITHM),
+            "access_token": jwt.encode(claims={"user_name": data.username, 'password': data.password},
+                                       key=CONFIG.IVM_SECRET_KEY, algorithm=CONFIG.IVM_ALGORITHM),
             "token_type": "bearer"
         }
     else:
@@ -63,50 +80,76 @@ async def login(data: OAuth2PasswordRequestForm = Depends()):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-@app.post('/api/list')
-async def list_goods(db = Depends(get_db), _=Depends(oauth2_scheme)) -> List[GooodsType]:
-    return db.query(Goods).all()
 
-@app.post('/api/update')
-async def list_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_scheme)) -> bool:
-    try:
-        indb: Goods = db.query(Goods).filter(Goods.key == goods.key).one()
-    except:
-        raise HTTPException(400, "没有找到该项目")
-    indb.name = goods.name
-    indb.mark = goods.mark
-    indb.unit = goods.unit
-    indb.quan = goods.quan
-    db.commit()
-    return True
+@app.post('/list')
+async def list_goods(db=Depends(get_db), _=Depends(oauth2_scheme)) -> List[CategoryType]:
+    ls = []
+    for cate in Category.select():
+        ls_ = []
+        for goods in cate.goods:
+            item = GoodsType.from_orm((goods))
+            item.flag = ""
+            ls_.append(item)
 
-@app.post("/api/del")
-async def del_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_scheme)) -> bool:
-    try:
-        indb: Goods = db.query(Goods).filter(Goods.name == goods.name).one()
-    except:
-        raise HTTPException(400, "没有找到该项目")
-    db.delete(indb)
-    db.commit()
-    return True
+        ls.append(CategoryType(key=cate.key, name=cate.name, unit=cate.unit, mark=cate.mark, goods=ls_))
 
-@app.post("/api/add")
-async def add_goods(goods: GooodsType, db = Depends(get_db), _=Depends(oauth2_scheme)) -> int:
-    """
+    return ls
 
-    :rtype: 新项目的id
-    """
-    if db.query(
-        exists().where( Goods.name == goods.name )
-    ).scalar():
-        raise HTTPException(400, "该项目已存在! 禁止重复添加")
+@app.post('/update')
+async def update_goods(
+    cate: CategoryType = Body(...),
+    __=Depends(get_db), _=Depends(oauth2_scheme)
+) -> GoodsType:
+    # try:
+    if cate.key == "add":
+        # 新建分类
+        indb: Category = Category.create(name=cate.name, unit=cate.unit, mark=cate.mark)
+    else:
+        indb: Category = Category.get_by_id(cate.key)
+        indb.name = cate.name
+        indb.mark = cate.mark
+        indb.unit = cate.unit
+        indb.save()
+
+    goods_ls = []
+    for goods in cate.goods:
+        # indb_ = Goods.get_or_none(Goods.key == )
+        if goods.flag:
+            if goods.flag == 'add':
+                # 新建
+                new = Goods.create(name = goods.name, quan = goods.quan, belongs = indb)
+                goods_ls.append(GoodsType(key=str(new.key), name=new.name, quan=new.quan, flag=""))
+            elif goods.flag == 'del':
+                # 删除
+                Goods.delete().where(Goods.key == goods.key).execute()
+        else:
+            # 修改
+            inst: Goods = Goods.get_by_id(goods.key)
+            inst.update(name = goods.name, quan = goods.quan)
+            inst.save()
+            goods_ls.append(goods)
+            
+    return CategoryType(key = cate.key, name = indb.name, mark = indb.mark, unit = indb.unit, goods=goods_ls)
+
+    # except:
+    #     raise HTTPException(400, "没有找到该项目")
 
 
-    new = Goods(name = goods.name, mark = goods.mark, unit = goods.unit, quan = goods.quan)
-    db.add(new)
-    db.commit()
+# ===== 已经合并到 update 中 =====
+# @app.post('/add_category')
+# async def add_category(
+#     # key: str = Body(),
+#     name: str = Body(...), 
+#     unit: str = Body(...), 
+#     mark: str = Body(...),
+#     db=Depends(get_db),
+#     _=Depends(oauth2_scheme)) -> CategoryType:
+#     return Category.create(name=name, unit=unit, mark=mark)
 
-    return db.query(Goods).filter(Goods.name == goods.name).one()
+@app.post('/del')
+async def del_category(cate: CategoryType = Body(...), db=Depends(get_db), _=Depends(oauth2_scheme)) -> bool:
+    return Category.delete().where(Category.key == cate.key).execute()
+
 
 if __name__ == '__main__':
     if sys.argv.__len__() > 1:

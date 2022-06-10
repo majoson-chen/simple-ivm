@@ -1,19 +1,19 @@
 :80 {
 	encode gzip zstd
 
-	# handle /ui* {
-	# 	root / /ui
-	# 	file_server
-	# 	try_files {path} /ui/
-	# }
-
 	handle /ui* {
-		reverse_proxy localhost:3000
-		# try_files {path} /ui/
+		root / /ui
+		file_server
+		try_files {path} /ui/
 	}
 
-	handle /api/* {
-		# rewrite strip_prefix /api
+	# handle /ui* {
+	# 	reverse_proxy localhost:3000
+	# 	# try_files {path} /ui/
+	# }
+
+	handle_path /api/* {
+		# rewrite strip_prefix /api 
 		reverse_proxy localhost:8000
 	}
 
