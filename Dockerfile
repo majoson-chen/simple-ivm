@@ -15,7 +15,7 @@ COPY requirements.txt .
 ENV PATH /usr/local/bin:$PATH
 
 RUN apk add --no-cache caddy gcc make g++ zlib-dev libffi-dev\
-&& pip install --no-cache-dir -r requirements.txt\
+&& pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --no-cache-dir python-multipart python-jose fastapi uvicorn[stander] peewee\
 && apk del gcc make g++ zlib-dev libffi-dev\
 && echo -e "#!/bin/sh\ncd /ivm\nnohup uvicorn main:app --host 0.0.0.0 --port 8000 >/dev/null 2>&1 &\ncaddy run" >> /bootstart.sh\
 # && echo -e "#!/bin/sh\ncd /ivm\nnohup uvicorn main:app --host 0.0.0.0 --port 8000 >/dev/null 2>&1 &\nnohup caddy start >/dev/null 2>&1 & /bin/sh" >> /bootstart.sh\
